@@ -14,15 +14,14 @@ pub enum Action {
 
 fn main() {
     let username = get_username();
-    println!("{:?}", username);
 
     match join_create() {
         Action::CREATE => {
             let server = Server::new();
             server.run();
-            client::join();
+            client::join(username);
         }
-        Action::JOIN => client::join(),
+        Action::JOIN => client::join(username),
         _ => println!("Nothing."),
     }
 }

@@ -1,28 +1,48 @@
-use std::io::{Read, Write};
 use std::net::{Shutdown, TcpListener, TcpStream};
 use std::sync::Arc;
 use std::sync::RwLock;
 use std::thread;
 use std::thread::JoinHandle;
+use std::{
+    collections::HashMap,
+    io::{Read, Write},
+};
 
 #[derive(Clone, Debug)]
 pub struct Server {
-    clients: Arc<RwLock<Vec<TcpStream>>>,
+    clients: Arc<RwLock<HashMap<Vec<u8>, TcpStream>>>,
 }
 
 impl Server {
     pub fn new() -> Self {
         Self {
-            clients: Arc::new(RwLock::new(Vec::new())),
+            clients: Arc::new(RwLock::new(HashMap::new())),
         }
     }
 
     fn handle_client(&mut self, mut stream: TcpStream) {
+        let mut username_buffer = vec![0; 32 as usize];
+        match stream.read(&mut username_buffer) {
+            Ok(_) => {
+                self.clients
+                    .write()
+                    .unwrap()
+                    .insert((*username_buffer).to_vec(), stream.try_clone().unwrap());
+            }
+            Err(_) => {
+                println!(
+                    "Failed to read username, terminating connection with {}",
+                    stream.peer_addr().unwrap()
+                );
+                stream.shutdown(Shutdown::Both).unwrap();
+            }
+        };
         let mut buffer = vec![0; 32 as usize];
         while match stream.read(&mut buffer) {
             Ok(_) => {
                 let clients = self.clients.write().unwrap();
-                for mut s in &*clients {
+                for (_, mut s) in &*clients {
+                    s.write(&username_buffer).unwrap();
                     s.write(&buffer).unwrap();
                 }
                 true
@@ -49,13 +69,7 @@ impl Server {
                     Ok(stream) => {
                         let mut self_clone = self_clone.clone();
                         thread::spawn(move || {
-                            self_clone
-                                .clients
-                                .write()
-                                .unwrap()
-                                .push(stream.try_clone().unwrap());
                             self_clone.handle_client(stream);
-                            // connection succeeded
                         });
                     }
                     Err(e) => {
