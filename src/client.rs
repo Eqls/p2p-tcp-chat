@@ -4,12 +4,14 @@ use std::net::TcpStream;
 use std::string::String;
 use std::thread;
 
+// use crate::packet::Packet;
+
 pub fn join(username: String) {
     match TcpStream::connect("localhost:3333") {
         Ok(mut stream) => {
             println!("Successfully connected to server in port 3333");
 
-            stream.write(&username.into_bytes());
+            stream.write(&username.clone().into_bytes());
 
             let mut c_stream = stream.try_clone().unwrap();
             thread::spawn(move || loop {
@@ -21,7 +23,7 @@ pub fn join(username: String) {
             });
 
             loop {
-                let mut buff = vec![0; 32 as usize];
+                let mut buff = vec![0; 512 as usize];
                 match stream.read(&mut buff) {
                     Ok(_) => {
                         let msg = buff.into_iter().take_while(|&x| x != 0).collect::<Vec<_>>();

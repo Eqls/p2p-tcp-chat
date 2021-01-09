@@ -2,6 +2,7 @@ use std::io;
 use std::string::String;
 
 pub mod client;
+pub mod packet;
 pub mod server;
 use server::Server;
 

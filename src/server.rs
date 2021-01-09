@@ -6,6 +6,7 @@ use std::thread::JoinHandle;
 use std::{
     collections::HashMap,
     io::{Read, Write},
+    iter,
 };
 
 #[derive(Clone, Debug)]
@@ -31,19 +32,24 @@ impl Server {
             }
             Err(_) => {
                 println!(
-                    "Failed to read username, terminating connection with {}",
+                    "Failed to read username, tserminating connection with {}",
                     stream.peer_addr().unwrap()
                 );
                 stream.shutdown(Shutdown::Both).unwrap();
             }
         };
-        let mut buffer = vec![0; 32 as usize];
+        let mut buffer = vec![0; 512 as usize];
         while match stream.read(&mut buffer) {
             Ok(_) => {
                 let clients = self.clients.write().unwrap();
                 for (_, mut s) in &*clients {
-                    s.write(&username_buffer).unwrap();
+                    let prefix = (String::from_utf8_lossy(&username_buffer).trim().to_owned()
+                        + ": ")
+                        .into_bytes();
+                    buffer.splice(..0, prefix.iter().cloned());
+                    println!("sent {:?} bytes", &buffer.len());
                     s.write(&buffer).unwrap();
+                    s.flush().unwrap();
                 }
                 true
             }
