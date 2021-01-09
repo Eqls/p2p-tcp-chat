@@ -16,6 +16,7 @@ pub fn join(username: String) {
             let mut c_stream = stream.try_clone().unwrap();
             thread::spawn(move || loop {
                 let mut msg = String::new();
+                io::stdout().flush().unwrap();
                 io::stdin()
                     .read_line(&mut msg)
                     .expect("Failed to read line");
@@ -26,9 +27,8 @@ pub fn join(username: String) {
                 let mut buff = vec![0; 512 as usize];
                 match stream.read(&mut buff) {
                     Ok(n) => {
-                        // println!("usize {:?}", n);
-                        let msg = buff.into_iter().take_while(|&x| x != 0).collect::<Vec<_>>();
-                        println!("message recv {:?}", String::from_utf8_lossy(&msg).trim());
+                        // println!("usize {:?}", n);s
+                        println!("{}", String::from_utf8_lossy(&buff[..n]).trim());
                     }
                     Err(e) => {
                         println!("Failed to receive data: {}", e);
