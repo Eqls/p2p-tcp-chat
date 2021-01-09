@@ -24,11 +24,11 @@ impl Server {
     fn handle_client(&mut self, mut stream: TcpStream) {
         let mut username_buffer = vec![0; 32 as usize];
         match stream.read(&mut username_buffer) {
-            Ok(_) => {
-                self.clients
-                    .write()
-                    .unwrap()
-                    .insert((*username_buffer).to_vec(), stream.try_clone().unwrap());
+            Ok(n) => {
+                self.clients.write().unwrap().insert(
+                    username_buffer[..n - 1].to_owned().to_vec(),
+                    stream.try_clone().unwrap(),
+                );
             }
             Err(_) => {
                 println!(
@@ -40,15 +40,21 @@ impl Server {
         };
         let mut buffer = vec![0; 512 as usize];
         while match stream.read(&mut buffer) {
-            Ok(_) => {
+            Ok(n) => {
                 let clients = self.clients.write().unwrap();
                 for (_, mut s) in &*clients {
-                    let prefix = (String::from_utf8_lossy(&username_buffer).trim().to_owned()
+                    let mut msg = (String::from_utf8_lossy(&username_buffer[..n - 1])
+                        .trim()
+                        .to_owned()
                         + ": ")
                         .into_bytes();
-                    buffer.splice(..0, prefix.iter().cloned());
-                    println!("sent {:?} bytes", &buffer.len());
-                    s.write(&buffer).unwrap();
+                    msg.extend(buffer[..n].iter().cloned());
+                    println!("DEBUG: buffer size is {:?} bytes", &buffer.len());
+                    println!("DEBUG: received msg size is {:?} bytes", n);
+                    println!("DEBUG: sent message size is {:?}", &msg.len());
+                    println!("DEBUG: {:?}", String::from_utf8_lossy(&msg).trim());
+                    println!("DEBUG: {:?}", String::from_utf8_lossy(&buffer[..n]).trim());
+                    s.write(&msg).unwrap();
                     s.flush().unwrap();
                 }
                 true

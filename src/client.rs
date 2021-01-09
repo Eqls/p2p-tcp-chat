@@ -11,7 +11,7 @@ pub fn join(username: String) {
         Ok(mut stream) => {
             println!("Successfully connected to server in port 3333");
 
-            stream.write(&username.clone().into_bytes());
+            stream.write(&username.trim().as_bytes()).unwrap();
 
             let mut c_stream = stream.try_clone().unwrap();
             thread::spawn(move || loop {
@@ -19,13 +19,14 @@ pub fn join(username: String) {
                 io::stdin()
                     .read_line(&mut msg)
                     .expect("Failed to read line");
-                c_stream.write(&msg.into_bytes());
+                c_stream.write(&msg.trim().as_bytes()).unwrap();
             });
 
             loop {
                 let mut buff = vec![0; 512 as usize];
                 match stream.read(&mut buff) {
-                    Ok(_) => {
+                    Ok(n) => {
+                        // println!("usize {:?}", n);
                         let msg = buff.into_iter().take_while(|&x| x != 0).collect::<Vec<_>>();
                         println!("message recv {:?}", String::from_utf8_lossy(&msg).trim());
                     }
