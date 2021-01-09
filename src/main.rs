@@ -28,10 +28,9 @@ fn main() {
 }
 
 fn get_username() -> String {
-    println!("Please enter your username.");
-
     let mut username = String::new();
 
+    println!("Please enter your username:");
     io::stdin()
         .read_line(&mut username)
         .expect("Failed to read line");
