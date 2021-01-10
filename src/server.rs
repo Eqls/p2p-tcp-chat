@@ -6,7 +6,6 @@ use std::thread::JoinHandle;
 use std::{
     collections::HashMap,
     io::{Read, Write},
-    iter,
 };
 
 #[derive(Clone, Debug)]
@@ -19,51 +18,6 @@ impl Server {
         Self {
             clients: Arc::new(RwLock::new(HashMap::new())),
         }
-    }
-
-    fn handle_client(&mut self, mut stream: TcpStream) {
-        let mut username_buffer = vec![0; 32 as usize];
-        match stream.read(&mut username_buffer) {
-            Ok(n) => {
-                username_buffer = (String::from_utf8_lossy(&username_buffer[..n - 1])
-                    .trim()
-                    .to_owned()
-                    + ": ")
-                    .into_bytes();
-                self.clients.write().unwrap().insert(
-                    username_buffer.to_owned().to_vec(),
-                    stream.try_clone().unwrap(),
-                );
-            }
-            Err(_) => {
-                println!(
-                    "Failed to read username, terminating connection with {}",
-                    stream.peer_addr().unwrap()
-                );
-                stream.shutdown(Shutdown::Both).unwrap();
-            }
-        };
-        let mut buffer = vec![0; 512 as usize];
-        while match stream.read(&mut buffer) {
-            Ok(n) => {
-                let clients = self.clients.write().unwrap();
-                for (_, mut s) in &*clients {
-                    let mut msg = username_buffer.clone();
-                    msg.extend(buffer[..n].iter().cloned());
-                    s.write(&msg).unwrap();
-                    s.flush().unwrap();
-                }
-                true
-            }
-            Err(_) => {
-                println!(
-                    "An error occurred, terminating connection with {}",
-                    stream.peer_addr().unwrap()
-                );
-                stream.shutdown(Shutdown::Both).unwrap();
-                false
-            }
-        } {}
     }
 
     pub fn run(&self) -> JoinHandle<()> {
@@ -88,5 +42,65 @@ impl Server {
             }
             drop(listener);
         })
+    }
+
+    fn read_username_buffer(&mut self, mut stream: &TcpStream) -> Option<Vec<u8>> {
+        let mut buffer = vec![0; 32 as usize];
+        return match stream.read(&mut buffer) {
+            Ok(n) => {
+                return Some(
+                    (String::from_utf8_lossy(&buffer[..n]).trim().to_owned() + ": ").into_bytes(),
+                );
+            }
+            Err(_) => {
+                println!(
+                    "Failed to read username, terminating connection with {}",
+                    stream.peer_addr().unwrap()
+                );
+                stream.shutdown(Shutdown::Both).unwrap();
+                None
+            }
+        };
+    }
+
+    fn broadcast(&mut self, message: Vec<u8>) {
+        let clients = self.clients.write().unwrap();
+        for (_, mut s) in &*clients {
+            s.write(&message).unwrap();
+            s.flush().unwrap();
+        }
+    }
+
+    fn handle_client(&mut self, mut stream: TcpStream) {
+        let username_buffer = self.read_username_buffer(&stream).unwrap();
+        self.clients.write().unwrap().insert(
+            username_buffer.to_owned().to_vec(),
+            stream.try_clone().unwrap(),
+        );
+
+        let mut buffer = vec![0; 512 as usize];
+        while match stream.read(&mut buffer) {
+            Ok(0) => {
+                let mut msg = username_buffer.clone();
+                msg.extend("has left the chat.".as_bytes().iter().cloned());
+                self.broadcast(msg);
+                stream.shutdown(Shutdown::Both).unwrap();
+                true
+            }
+            Ok(n) => {
+                let mut msg = username_buffer.clone();
+                msg.extend(buffer[..n].iter().cloned());
+                self.broadcast(msg);
+                true
+            }
+            Err(_) => {
+                println!(
+                    "An error occurred, terminating connection with {}",
+                    stream.peer_addr().unwrap()
+                );
+                stream.shutdown(Shutdown::Both).unwrap();
+                false
+            }
+        } {}
     }
 }
