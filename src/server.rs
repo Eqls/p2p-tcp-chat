@@ -7,10 +7,15 @@ use std::{
     collections::HashMap,
     io::{Read, Write},
 };
+#[derive(Debug)]
+struct Client {
+    username: String,
+    stream: TcpStream,
+}
 
 #[derive(Clone, Debug)]
 pub struct Server {
-    clients: Arc<RwLock<HashMap<Vec<u8>, TcpStream>>>,
+    clients: Arc<RwLock<HashMap<usize, Client>>>,
 }
 
 impl Server {
@@ -24,15 +29,38 @@ impl Server {
         let self_clone = self.clone();
         thread::spawn(move || {
             let self_clone = self_clone.clone();
+            let mut handles: Vec<JoinHandle<()>> = Vec::new();
             let listener = TcpListener::bind("0.0.0.0:3333").unwrap();
             println!("Server listening on port 3333");
             for stream in listener.incoming() {
                 match stream {
                     Ok(stream) => {
                         let mut self_clone = self_clone.clone();
-                        thread::spawn(move || {
-                            self_clone.handle_client(stream);
+                        let mut id = 0;
+
+                        {
+                            let clients = &self_clone.clients.write().unwrap();
+
+                            if clients.len() > 0 {
+                                id = clients.len();
+                            }
+                        }
+
+                        let handle = thread::spawn(move || {
+                            {
+                                let mut clients = self_clone.clients.write().unwrap();
+                                clients.insert(
+                                    id.clone(),
+                                    Client {
+                                        username: String::new(),
+                                        stream: stream.try_clone().unwrap(),
+                                    },
+                                );
+                            }
+
+                            self_clone.handle_client(stream.try_clone().unwrap(), &id);
                         });
+                        handles.push(handle);
                     }
                     Err(e) => {
                         println!("Error: {}", e);
@@ -40,17 +68,19 @@ impl Server {
                     }
                 }
             }
+
+            for handle in handles {
+                handle.join().unwrap();
+            }
             drop(listener);
         })
     }
 
-    fn read_username_buffer(&mut self, mut stream: &TcpStream) -> Option<Vec<u8>> {
+    fn read_username_buffer(&mut self, mut stream: &TcpStream) -> Option<String> {
         let mut buffer = vec![0; 32 as usize];
         return match stream.read(&mut buffer) {
             Ok(n) => {
-                return Some(
-                    (String::from_utf8_lossy(&buffer[..n]).trim().to_owned() + ": ").into_bytes(),
-                );
+                return Some(String::from_utf8_lossy(&buffer[..n]).trim().to_owned());
             }
             Err(_) => {
                 println!(
@@ -63,32 +93,36 @@ impl Server {
         };
     }
 
+    fn disconnect(&mut self, id: &usize) {
+        self.clients.write().unwrap().remove(id);
+        println!("{:?}", self.clients.read().unwrap());
+    }
+
     fn broadcast(&mut self, message: Vec<u8>) {
-        let clients = self.clients.write().unwrap();
-        for (_, mut s) in &*clients {
-            s.write(&message).unwrap();
-            s.flush().unwrap();
+        let mut clients = self.clients.write().unwrap();
+        for client in clients.values_mut() {
+            client.stream.write(&message).unwrap();
+            client.stream.flush().unwrap();
         }
     }
 
-    fn handle_client(&mut self, mut stream: TcpStream) {
-        let username_buffer = self.read_username_buffer(&stream).unwrap();
-        self.clients.write().unwrap().insert(
-            username_buffer.to_owned().to_vec(),
-            stream.try_clone().unwrap(),
-        );
+    fn handle_client(&mut self, mut stream: TcpStream, id: &usize) {
+        let username = self.read_username_buffer(&stream).unwrap();
+        {
+            self.clients.write().unwrap().get_mut(&id).unwrap().username = username.clone();
+        }
 
         let mut buffer = vec![0; 512 as usize];
         while match stream.read(&mut buffer) {
             Ok(0) => {
-                let mut msg = username_buffer.clone();
+                let mut msg = username.clone().as_bytes().to_vec();
                 msg.extend("has left the chat.".as_bytes().iter().cloned());
                 self.broadcast(msg);
-                stream.shutdown(Shutdown::Both).unwrap();
-                true
+                self.disconnect(id);
+                false
             }
             Ok(n) => {
-                let mut msg = username_buffer.clone();
+                let mut msg = username.clone().as_bytes().to_vec();
                 msg.extend(buffer[..n].iter().cloned());
                 self.broadcast(msg);
                 true
