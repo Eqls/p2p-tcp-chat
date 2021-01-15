@@ -95,7 +95,6 @@ impl Server {
 
     fn disconnect(&mut self, id: &usize) {
         self.clients.write().unwrap().remove(id);
-        println!("{:?}", self.clients.read().unwrap());
     }
 
     fn broadcast(&mut self, message: Vec<u8>) {
@@ -112,17 +111,22 @@ impl Server {
             self.clients.write().unwrap().get_mut(&id).unwrap().username = username.clone();
         }
 
+        self.broadcast(
+            (username.as_str().to_owned() + " has joined the chat.")
+                .as_bytes()
+                .to_vec(),
+        );
         let mut buffer = vec![0; 512 as usize];
         while match stream.read(&mut buffer) {
             Ok(0) => {
                 let mut msg = username.clone().as_bytes().to_vec();
-                msg.extend("has left the chat.".as_bytes().iter().cloned());
+                msg.extend(" has left the chat.".as_bytes().iter().cloned());
                 self.broadcast(msg);
                 self.disconnect(id);
                 false
             }
             Ok(n) => {
-                let mut msg = username.clone().as_bytes().to_vec();
+                let mut msg = (username.as_str().to_owned() + ": ").as_bytes().to_vec();
                 msg.extend(buffer[..n].iter().cloned());
                 self.broadcast(msg);
                 true
